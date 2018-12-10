@@ -1,11 +1,12 @@
 # coding: utf-8
 import matplotlib.pyplot as plt
-
+import openpyxl as openpyxl
 from sklearn.ensemble import RandomForestClassifier
 import sklearn.datasets
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import f1_score
 import pandas as pd
 from sklearn.metrics import accuracy_score
 import numpy as np
@@ -69,78 +70,106 @@ print("Training set size:", X_train.shape)
 print("Validation set size:", X_test.shape)
 print("Total Dataset size:", df.shape)
 
-n_est = 5
-df_res = pd.DataFrame(columns=['db_name', 'n_est', 'nonb', 'rt', 'Accu', 'MSE', 'RMSE'])
+n_est = 50
+min_impu = 0.0005
 
-for x in range (0, 10):
+min_samp = int(df.shape[0] * 0.02)
+
+### CHANGE HERE ###
+xls_param = min_impu
+xls_param_name = 'min_samp'
+
+df_res = pd.DataFrame(columns=['db_name', 'xls_param ' + xls_param_name, 'nonb', 'rt', 'Accu', 'MSE', 'F1'])
+df_res_nb = pd.DataFrame(columns=['db_name', 'xls_param ' + xls_param_name, 'nonb', 'rt', 'Accu', 'MSE', 'F1'])
+
+for x in range (0, 11):
     #####Run without NB
-    print('##################---RF without NB---######################')
-    start_time = time.time()
+    print('####################---RF without NB---#####################')
+    xls_param = min_samp
+
+    ### FOR min_samples_leaf ONLY ###
+    per_param = float((xls_param / df.shape[0]) * 100)
+
+    ### FOR min_impurity_decrease ONLY ###
+
+
     clf = RandomForestClassifier (n_estimators=n_est,
+                                  min_impurity_decrease=min_impu,
                                   criterion='gini',
-                                  max_depth=3,
+                                  max_depth=8,
                                   min_samples_split=2,
-                                  min_samples_leaf=1,
+                                  min_samples_leaf=min_samp,
                                   min_weight_fraction_leaf=0.0,
                                   max_features='auto',
                                   max_leaf_nodes=None,
                                   bootstrap=True,
                                   oob_score=False,
-                                  n_jobs=1,
+                                  n_jobs=-1,
                                   random_state=None,
                                   verbose=0,
                                   warm_start=False,
-                                  class_weight=None)
+                                  class_weight='balanced')
     clf = clf.fit(X_train, y_train)
-    nonb_scores = clf.predict(X_test, use_nb=False)
 
+    start_time = time.time()
+    nonb_scores = clf.predict(X_test, use_nb=False)
     elapsed_time = time.time() - start_time
+
     print('Run time: (include fit and predict) : ', elapsed_time)
     print('RF without NB Accuracy is - ', accuracy_score(y_test, nonb_scores))
 
     rmseErr = mean_squared_error(nonb_scores, y_test)
-    print("MSE : ")
-    print(rmseErr)
-    rmseErr1 = mean_squared_error(nonb_scores, y_test)**0.5
-    print("RMSE : ")
-    print(rmseErr1)
+    print("MSE : ", rmseErr)
+
+    f1 = f1_score(nonb_scores, y_test, average='weighted')
+    print("F1 Weighted : ", f1)
 
     # add results into panda dataframe
-    df_res = df_res.append({'db_name': file_name, 'n_est': n_est, 'nonb': 1, 'rt': elapsed_time, 'Accu': (
-        accuracy_score(y_test, nonb_scores)), 'MSE': rmseErr, 'RMSE': rmseErr1}, ignore_index = True)
+
+    df_res = df_res.append({'db_name': file_name, 'xls_param ' + xls_param_name: per_param, 'nonb': 1, 'rt': elapsed_time, 'Accu': (
+        accuracy_score(y_test, nonb_scores)), 'MSE': rmseErr, 'F1': f1}, ignore_index = True)
 
     #####Run with NB
-    print('#################---RF with NB---##################')
+    print('####################---RF with NB---#####################')
+
     start_time = time.time()
-
     nb_scores = clf.predict(X_test, use_nb=True)
-
-    rmseErr = mean_squared_error(nb_scores, y_test)
-    print("MSE : ")
-    print(rmseErr)
-    rmseErr1 = mean_squared_error(nb_scores, y_test) ** 0.5
-    print("RMSE : ")
-    print(rmseErr1)
-
     elapsed_time = time.time() - start_time
+
     print('Run time: (include fit and predict) : ', elapsed_time)
     print('RF with NB Accuracy is - ', accuracy_score(y_test, nb_scores))
 
-    #add results into panda dataframe
-    df_res = df_res.append({'db_name': file_name, 'n_est': n_est, 'nonb': 0, 'rt': elapsed_time, 'Accu': (
-        accuracy_score(y_test, nb_scores)), 'MSE': rmseErr, 'RMSE': rmseErr1}, ignore_index=True)
+    rmseErr = mean_squared_error(nb_scores, y_test)
+    print("MSE : ", rmseErr)
 
-    n_est = n_est + 5
+    f1 = f1_score(nb_scores, y_test, average='weighted')
+    print("F1 Weighted : ", f1)
+
+    #add results into panda dataframe
+    df_res_nb = df_res_nb.append({'db_name': file_name, 'xls_param ' + xls_param_name: per_param, 'nonb': 0, 'rt': elapsed_time, 'Accu': (
+        accuracy_score(y_test, nb_scores)), 'MSE': rmseErr, 'F1': f1}, ignore_index=True)
+
+    ###### Dynamic Params #######
+    #n_est = n_est + 5
+    #min_impu = min_impu + 0.00195
+    min_samp = min_samp + int(df.shape[0] * 0.018)
+
 
 # Create a Pandas Excel writer using XlsxWriter as the engine.
-writer = pd.ExcelWriter('Results.xlsx', engine='xlsxwriter')
+writer = pd.ExcelWriter('Results.xlsx', engine='openpyxl')
+
+if os.path.exists('Results.xlsx'):
+    book = openpyxl.load_workbook('Results.xlsx')
+    writer.book = book
 
 # Convert the dataframe to an XlsxWriter Excel object.
-df_res.to_excel(writer, sheet_name='Sheet1')
+df_res.to_excel(writer, sheet_name='no_nb - ' + file_name, index=False)
+df_res_nb.to_excel(writer, sheet_name='with nb - ' + file_name, index=False)
 
 # Close the Pandas Excel writer and output the Excel file.
 writer.save()
+writer.close()
 
-plt.scatter(df_res['n_est'], df_res['Accu'])
-plt.show()
+#plt.scatter(df_res['n_est'], df_res['Accu'])
+#plt.show()
 print('Done')
